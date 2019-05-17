@@ -1,0 +1,15 @@
+{
+  "name": "quiz-bot",
+  "version": "1.0.0",
+  "description": "A bot to maintain a quiz for a group conversation",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "circuit-sdk": "^1.2.5603",
+    "express": "^4.17.0"
+  }
+}

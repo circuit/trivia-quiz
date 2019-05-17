@@ -1,0 +1,11 @@
+{
+    "credentials": {
+        "client_id": "<client_id>",
+        "client_secret": "<client_id",
+        "domain": "circuitsandbox.net",
+        "scope": "<scopes>"
+    },
+    "moderatorConversationId": "<moderatorConversationId>",
+    "quizConversationId": "<quizConversationId>",
+    "host": "<host_of_your_app>"
+}
