@@ -9,7 +9,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "circuit-sdk": "^1.2.5603",
-    "express": "^4.17.0"
+    "circuit-sdk": "^1.2.5603"
   }
 }
