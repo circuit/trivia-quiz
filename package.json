@@ -1,12 +1,12 @@
 {
-  "name": "quiz-bot",
+  "name": "trivia-bot",
   "version": "1.0.0",
-  "description": "A bot to maintain a quiz for a group conversation",
+  "description": "A bot to maintain a trivia quiz for a group conversation",
   "main": "app.js",
   "scripts": {
     "start": "node app.js"
   },
-  "author": "",
+  "author": " Richard Fazzio <richard.fazzio@atos.net>",
   "license": "ISC",
   "dependencies": {
     "circuit-sdk": "^1.2.5603"

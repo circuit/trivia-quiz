@@ -9,8 +9,8 @@ const client = new Circuit.Client({
 const MODERATOR_CONVERSATION_ID = process.env.MODERATOR_CONVERSATION_ID; // conversation Id of the covnersation with moderator
 const QUIZ_CONVERSATION_ID = process.env.QUIZ_CONVERSATION_ID; // conversation Id of the trivia quiz
 const TIME_DELAY = 20; // Delay to wait between questions
-let FORM_ID; // Id of the current form (Creation Form or Questions for Trivia)
-let CREATOR_ID; // User Id of the moderator
+let formId; // Id of the current form (Creation Form or Questions for Trivia)
+let creatorId; // User Id of the moderator
 let quizForm; // Item Object of the current form
 let sessionOnGoing = false; // to determine if a session is going on
 let participantScoresHashMap = {}; // Hash map for participant scores, indexed by userId
@@ -19,8 +19,8 @@ let bot; // Bot to manage the trivia session
 
 // Create the blank form for the moderator to fill out
 const createBlankForm = async (item) => {
-    CREATOR_ID = item.creatorId;
-    FORM_ID = `${Date.now()}_${Math.random()}`;
+    creatorId = item.creatorId;
+    formId = `${Date.now()}_${Math.random()}`;
     let controls = [{
         type: 'INPUT',
         name: `title`, // optional
@@ -56,7 +56,7 @@ const createBlankForm = async (item) => {
     controls = [...controls, ...actionButtons];
     const form = {
         title: 'Trivia Quiz',
-        id: FORM_ID,
+        id: formId,
         controls: controls
     };
     const content = {
@@ -145,8 +145,11 @@ const chooseWinners = async (itemId) => {
     users.forEach((user, index) => {
         userListDataText += `${index + 1}. ${user.displayName} - ${participantScoresHashMap[user.userId] && participantScoresHashMap[user.userId].score} points.\n`;
     });
+    if (!userListDataText.length) {
+        return;
+    }
     await client.addTextItem(QUIZ_CONVERSATION_ID , {
-        topic: 'Trivia Results',
+        subject: 'Trivia Full Results',
         content: userListDataText
     });
 }
@@ -165,6 +168,7 @@ const createNewSession = async (formEvt) => {
         }
     }
     if (!questions.length) {
+        clearData();
         await client.addTextItem(MODERATOR_CONVERSATION_ID , {
             parentId: formEvt.itemId,
             content: `There aren't enough questions to make a quiz`
@@ -178,11 +182,11 @@ const createNewSession = async (formEvt) => {
     });
     const initialPost = await client.addTextItem(QUIZ_CONVERSATION_ID , {
         subject: title.value ? title.value : `Trivia session ${new Date().toLocaleDateString()}`,
-        content: `I will post ${questions.length} questions. You have ${TIME_DELAY} seconds to answer each question. First person to answer correctly gets extra points. Get ready, first question is coming up now...`
+        content: `I will post ${questions.length} question${questions.length > 1 ? 's' : ''}. You have ${TIME_DELAY} seconds to answer each question. First person to answer correctly gets extra points. Get ready, first question is coming up now...`
     });
     await sleep(TIME_DELAY);
     for (const question of questions) {
-        FORM_ID = question.id;
+        formId = question.id;
         quizForm = await client.addTextItem(QUIZ_CONVERSATION_ID, {
             parentId: initialPost.itemId,
             form: question
@@ -230,8 +234,8 @@ const submitAnswer = (evt) => {
 
 // Reset variables for the session
 const clearData = () => {
-    FORM_ID = null;
-    CREATOR_ID = null;
+    formId = null;
+    creatorId = null;
     quizForm = null;
     sessionOnGoing = false;
     participantScoresHashMap = {};
@@ -239,28 +243,52 @@ const clearData = () => {
 }
 
 const addEventListeners = () => {
-    client.addEventListener('itemAdded', evt => {
-        const item = evt && evt.item;
+    // client.addEventListener('itemAdded', evt => {
+    //     const item = evt && evt.item;
+    //     // The item was posted in the moderator conversation
+    //     if (item.convId === MODERATOR_CONVERSATION_ID) {
+    //         const createNewSession = item.text.mentionedUsers && item.text.mentionedUsers.includes(bot.userId) && item.text.content.includes('new session');
+    //         // If the item contains a form and not from the bot itself, create a bank form for the moderator
+    //         if (!item.text.formMetaData && item.creatorId !== bot.userId && createNewSession) {
+    //             createBlankForm(item);
+    //         }
+    //     }
+    // });
+
+    client.addEventListener('mention', async evt => {
+        const itemReference = evt.mention && evt.mention.itemReference;
         // The item was posted in the moderator conversation
-        if (item.convId === MODERATOR_CONVERSATION_ID) {
-            const createNewSession = item.text.mentionedUsers && item.text.mentionedUsers.includes(bot.userId) && item.text.content.includes('new session');
-            // If the item contains a form and not from the bot itself, create a bank form for the moderator
-            if (!item.text.formMetaData && item.creatorId !== bot.userId && createNewSession) {
-                createBlankForm(item);
+        if (itemReference.convId !== MODERATOR_CONVERSATION_ID) {
+            return;
+        }
+        const item = await client.getItemById(itemReference.itemId);
+        if (item.text.content.includes('new session')) {
+            if (!!formId) {
+                await client.addTextItem(MODERATOR_CONVERSATION_ID, {
+                    parentId: item.parentItemId || item.itemId,
+                    content: 'I am sorry but there is already a session in progress.'
+                });
+                return;
             }
+            createBlankForm(item);
         }
     });
 
     client.addEventListener('formSubmission', async evt => {
         if (quizForm.itemId === evt.itemId && evt.submitterId !== bot.userId) {
-           if (evt.form.id !== FORM_ID) {
+           if (evt.form.id !== formId) {
                 return;
            }
            // Return so the creator cannot take part in the quiz 
-           if (evt.submitterId === CREATOR_ID) {
+           if (evt.submitterId === creatorId) {
                // If the moderator submits the form from the moderator conversation, create a new session
                if (!sessionOnGoing && evt.itemId === quizForm.itemId && quizForm.convId === MODERATOR_CONVERSATION_ID) {
-                    createNewSession(evt);
+                    try {
+                        createNewSession(evt);
+                    } catch (err) {
+                        console.error(err);
+                        clearData();
+                    }
                }
            } else {
                 submitAnswer(evt);
@@ -281,7 +309,6 @@ const sleep = (seconds) => {
         bot = await client.logon();
         addEventListeners();
     } catch (err) {
-        clearData();
         console.error(err);
     }
 })();
