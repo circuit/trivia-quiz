@@ -2,8 +2,7 @@
 node_modules
 npm-debug.log
 
-# Vs Code Debugger
-.vscode
-
 # Personal Configuration
 config.json
+processenveu.json
+.vscode

@@ -1,11 +1,14 @@
 const Circuit = require('circuit-sdk');
-const config = require('./config.json');
+const client = new Circuit.Client({
+    client_id: process.env.CLIENT_ID,
+    client_secret: process.env.CLIENT_SECRET,
+    domain: process.env.DOMAIN,
+    scope: process.env.SCOPES
+});
 
-const client = new Circuit.Client(config.credentials);
-
-const MODERATOR_CONVERSATION_ID = config.moderatorConversationId; // conversation Id of the covnersation with moderator
-const QUIZ_CONVERSATION_ID = config.quizConversationId; // conversation Id of the trivia quiz
-const TIME_DELAY = 10; // Delay to wait between questions
+const MODERATOR_CONVERSATION_ID = process.env.MODERATOR_CONVERSATION_ID; // conversation Id of the covnersation with moderator
+const QUIZ_CONVERSATION_ID = process.env.QUIZ_CONVERSATION_ID; // conversation Id of the trivia quiz
+const TIME_DELAY = 20; // Delay to wait between questions
 let FORM_ID; // Id of the current form (Creation Form or Questions for Trivia)
 let CREATOR_ID; // User Id of the moderator
 let quizForm; // Item Object of the current form
@@ -27,14 +30,11 @@ const createBlankForm = async (item) => {
         const question = [{
             type: 'LABEL',
             text: `Question ${i}`
-        },{
+        }, {
             type: 'INPUT',
             name: `question${i}`,
             text: 'Enter the question here...',
         }, {
-            type: 'LABEL',
-            text: `Answer to question ${i}`
-        },{
             type: 'INPUT',
             name: `answer${i}`,
             text: 'Enter the answer here...',
@@ -47,22 +47,21 @@ const createBlankForm = async (item) => {
             text: 'Start session now',
             action: 'submit',
             notification: 'Form submitted successfully'
-        },{
-        text: 'Cancel',
-        action: 'reset',
-        notification: 'Form cancelled successfully'
+        }, {
+            text: 'Cancel',
+            action: 'reset',
+            notification: 'Form cancelled successfully'
         }]
     }];
     controls = [...controls, ...actionButtons];
     const form = {
-        title: 'Trivia Quiz', // optional
+        title: 'Trivia Quiz',
         id: FORM_ID,
         controls: controls
-    }
+    };
     const content = {
-        content: 'Trivia Quiz',
         form: form
-    }
+    };
     quizForm = await client.addTextItem(MODERATOR_CONVERSATION_ID, content);
 }
 
@@ -98,30 +97,57 @@ const createForm = (question, answer, total) => {
 
 // Chooses the winners and posts results to the conversation
 const chooseWinners = async (itemId) => {
-    await sleep(TIME_DELAY);
+    await sleep(10);
     await client.addTextItem(QUIZ_CONVERSATION_ID , {
         parentId: itemId,
         content: 'And the winners are...'
     });
-    await sleep(TIME_DELAY / 2);
+    await sleep(5);
     const participants = Object.keys(participantScoresHashMap).map(userId => {
         return { userId: userId, score: participantScoresHashMap[userId].score };
     });
+    let winnersScores = [];
+    let currScore = 1;
     // Sort particpants based on their scores to choose winner
     participants.sort((a,b) => a.score > b.score ? -1 : 1);
-    const winnersScores = participants.slice(0 , 3);
+    participants.some(p => {
+        if (winnersScores.length > 2 && p.score < currScore) {
+            return true;
+        }
+        currScore = p.score;
+        winnersScores.push(p);
+    });
+    winnersScores = winnersScores.filter(s => s.score > 0);
     const winnerUserIds = winnersScores.map(w => w.userId);
     const winners = !!winnerUserIds.length && await client.getUsersById(winnerUserIds);
-    const nonPositiveScores = winnersScores.every(s => s.score < 1);
-    let content = !winners || nonPositiveScores ? 'Sorry there were no winners.' : 'Winners:\n\n';
-    !nonPositiveScores && winnersScores.forEach((w, i) => {
-        const win = winners.find(u => u.userId === w.userId);
-        const winnerText = `${i + 1}. ${win.displayName} - ${w.score} points.\n`;
+    let content = !winners ? 'Sorry there were no winners.' : 'Winners:\n\n';
+    let place = 1;
+    for (let i = 0 ; i < winnersScores.length; i++) {
+        currScore = winnersScores[i].score;
+        const firstWinner = winners.find(u => u.userId === winnersScores[i].userId);
+        let winnerText = `${place}. ${firstWinner.displayName}`;
+        while (i < winnersScores.length && winnersScores[i + 1] && winnersScores[i + 1].score === currScore) {
+            const win = winners.find(u => u.userId === winnersScores[i + 1].userId);
+            winnerText += `, ${win.displayName}`;
+            i++;
+        }
+        winnerText += ` - ${currScore} points.\n`
         content += winnerText;
-    });
+        place++;
+    }
     await client.addTextItem(QUIZ_CONVERSATION_ID , {
         parentId: itemId,
         content: content
+    });
+    const users = await client.getUsersById(Object.keys(participantScoresHashMap));
+    users.sort((a, b) => a.displayName > b.displayName ? 1 : -1);
+    let userListDataText = '';
+    users.forEach((user, index) => {
+        userListDataText += `${index + 1}. ${user.displayName} - ${participantScoresHashMap[user.userId] && participantScoresHashMap[user.userId].score} points.\n`;
+    });
+    await client.addTextItem(QUIZ_CONVERSATION_ID , {
+        topic: 'Trivia Results',
+        content: userListDataText
     });
 }
 
@@ -152,7 +178,7 @@ const createNewSession = async (formEvt) => {
     });
     const initialPost = await client.addTextItem(QUIZ_CONVERSATION_ID , {
         subject: title.value ? title.value : `Trivia session ${new Date().toLocaleDateString()}`,
-        content: `I will post ${questions.length} questions. You have 10 seconds to answer each question. First person to answer correctly gets extra points. Get ready, first question is coming up now...`
+        content: `I will post ${questions.length} questions. You have ${TIME_DELAY} seconds to answer each question. First person to answer correctly gets extra points. Get ready, first question is coming up now...`
     });
     await sleep(TIME_DELAY);
     for (const question of questions) {
@@ -165,7 +191,7 @@ const createNewSession = async (formEvt) => {
         await updateForm(quizForm);
     }
     await chooseWinners(initialPost.itemId);
-    endSession(); // Resets local variables for a new session
+    clearData(); // Resets local variables for a new session
 }
 
 // Updated the form after the time is finished
@@ -192,7 +218,7 @@ const submitAnswer = (evt) => {
         };
     }
     // User submitted the correct answer
-    if (userForm.data[0].value === quizAnswers[userForm.id].answer) {
+    if (userForm.data[0].value.toUpperCase() === quizAnswers[userForm.id].answer.toUpperCase()) {
         if (!quizAnswers[userForm.id].answered) {
             quizAnswers[userForm.id].answered = true;
             participantScoresHashMap[userId].score += 2;
@@ -203,7 +229,7 @@ const submitAnswer = (evt) => {
 }
 
 // Reset variables for the session
-const endSession = () => {
+const clearData = () => {
     FORM_ID = null;
     CREATOR_ID = null;
     quizForm = null;
@@ -255,6 +281,7 @@ const sleep = (seconds) => {
         bot = await client.logon();
         addEventListeners();
     } catch (err) {
+        clearData();
         console.error(err);
     }
 })();
