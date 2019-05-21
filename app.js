@@ -37,6 +37,7 @@ const createBlankForm = async (item) => {
             type: 'INPUT',
             name: `question${i}`,
             text: 'Enter the question here...',
+            rows: 4
         }, {
             type: 'INPUT',
             name: `answer${i}`,
@@ -100,12 +101,12 @@ const createForm = (question, answer, total) => {
 
 // Chooses the winners and posts results to the conversation
 const chooseWinners = async (itemId) => {
-    await sleep(10);
+    await sleep(TIME_DELAY / 2);
     await client.addTextItem(QUIZ_CONVERSATION_ID , {
         parentId: itemId,
         content: 'And the winners are...'
     });
-    await sleep(5);
+    await sleep(TIME_DELAY / 4);
     const participants = Object.keys(participantScoresHashMap).map(userId => {
         return { userId: userId, score: participantScoresHashMap[userId].score };
     });
@@ -215,7 +216,7 @@ const createNewSession = async (formEvt) => {
         subject: title.value ? title.value : `Trivia session ${new Date().toLocaleDateString()}`,
         content: `I will post ${questions.length} question${questions.length > 1 ? 's' : ''}. You have ${TIME_DELAY} seconds to answer each question. First person to answer correctly gets extra points. Get ready, first question is coming up now...`
     });
-    await sleep(TIME_DELAY);
+    await sleep(TIME_DELAY / 2);
     for (const question of questions) {
         formId = question.id;
         quizForm = await client.addTextItem(QUIZ_CONVERSATION_ID, {
