@@ -1,6 +1,5 @@
 # Circuit Trivia Quiz
 
-## Description
 This application is a bot used to moderate a trivia session. The creator of the trivia can add the bot to a conversation and mention the trivia bot to begin the creation of a trivia session. The trivia bot will offer a maximum of 10 questions you may pose the participants of another conversation. Hit the "Start session now" button to begin the session. Participants will be notified then the quiz will shortly begin, participants have 20 seconds to answer each question and the first person to answer will be awarded 2 points where subsequent answers will get 1 point. At the end of the trivia session the top 3 winners are posted in the conversation along with their point totals.
 
 ## Prerequisites
