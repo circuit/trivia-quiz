@@ -1,4 +1,6 @@
 const Circuit = require('circuit-sdk');
+const FileAPI = require('file-api');
+const File = FileAPI.File;
 const client = new Circuit.Client({
     client_id: process.env.CLIENT_ID,
     client_secret: process.env.CLIENT_SECRET,
@@ -16,6 +18,7 @@ let sessionOnGoing = false; // to determine if a session is going on
 let participantScoresHashMap = {}; // Hash map for participant scores, indexed by userId
 let quizAnswers = {}; // Hash map of quiz answers, indexed by their form id
 let bot; // Bot to manage the trivia session
+let questions = []; // An array for form questions
 
 // Create the blank form for the moderator to fill out
 const createBlankForm = async (item) => {
@@ -67,7 +70,7 @@ const createBlankForm = async (item) => {
 
 // Creates a form for each question
 const createForm = (question, answer, total) => {
-    const formId = `${Date.now()}_${Math.random()}`;
+    const formId = `${total}_${Date.now()}`;
     // Save questions an answers in a hash map for later
     quizAnswers[formId] = {
         answer: answer.value,
@@ -152,12 +155,40 @@ const chooseWinners = async (itemId) => {
         subject: 'Trivia Full Results',
         content: userListDataText
     });
+    const jsonFileAnswers = [];
+    users.forEach(user => {
+        const data = {
+            userId: user.userId,
+            name: user.displayName,
+            score: participantScoresHashMap[user.userId].score,
+            answers: []
+        }
+        const answers = participantScoresHashMap[user.userId].answers;
+        Object.keys(answers).forEach(answer => {
+            data.answers.push(answers[answer]);
+        });
+        jsonFileAnswers.push(data);
+    });
+    // Get the parent item of the quiz to obtain the title of the trivia quiz
+    const parentItem = await client.getItemById(itemId);
+    const fileBuffer = new File({
+        name: `results.json`,
+        type: 'fsify.FILE',
+        buffer: Buffer.from(JSON.stringify(jsonFileAnswers, null, 4))
+    });
+    const results = {
+        subject: parentItem.text.subject,
+        content: `Attatched are the results of the trivia quit.`,
+        attachments: [fileBuffer]
+    };
+    // Upload the results of the trivia to the moderated conversation in JSON format
+    await client.addTextItem(MODERATOR_CONVERSATION_ID, results);
 }
 
 // Created a new session from the form and runs the quiz
 const createNewSession = async (formEvt) => {
     const form = formEvt.form;
-    const questions = []; // An array of form questions
+    questions = [];
     const title = form.data[0];
     let total = 0;
     for (let i = 1; i < form.data.length; i += 2) {
@@ -215,10 +246,16 @@ const updateForm = async (item) => {
 const submitAnswer = (evt) => {
     const userId = evt.submitterId;
     const userForm = evt.form;
+    const answerData = {
+        answerGiven: userForm.data[0].value,
+        pointsGiven: 0,
+        question: userForm.id.substring(0, 1)
+    };
     // If user hasn't submitted  an answer yet store in hash map and set score to 0
     if (!participantScoresHashMap[userId]) {
         participantScoresHashMap[userId] = {
-            score: 0
+            score: 0,
+            answers: {} //  Used to store the user's answers
         };
     }
     // User submitted the correct answer
@@ -226,10 +263,13 @@ const submitAnswer = (evt) => {
         if (!quizAnswers[userForm.id].answered) {
             quizAnswers[userForm.id].answered = true;
             participantScoresHashMap[userId].score += 2;
+            answerData.pointsGiven = 2;
         } else {
             participantScoresHashMap[userId].score++;
+            answerData.pointsGiven = 1;
         }
     }
+    participantScoresHashMap[userId].answers[userForm.id.substring(0, 1)] = answerData;
 }
 
 // Reset variables for the session
@@ -240,21 +280,10 @@ const clearData = () => {
     sessionOnGoing = false;
     participantScoresHashMap = {};
     quizAnswers = {};
+    questions = [];
 }
 
 const addEventListeners = () => {
-    // client.addEventListener('itemAdded', evt => {
-    //     const item = evt && evt.item;
-    //     // The item was posted in the moderator conversation
-    //     if (item.convId === MODERATOR_CONVERSATION_ID) {
-    //         const createNewSession = item.text.mentionedUsers && item.text.mentionedUsers.includes(bot.userId) && item.text.content.includes('new session');
-    //         // If the item contains a form and not from the bot itself, create a bank form for the moderator
-    //         if (!item.text.formMetaData && item.creatorId !== bot.userId && createNewSession) {
-    //             createBlankForm(item);
-    //         }
-    //     }
-    // });
-
     client.addEventListener('mention', async evt => {
         const itemReference = evt.mention && evt.mention.itemReference;
         // The item was posted in the moderator conversation
@@ -275,7 +304,7 @@ const addEventListeners = () => {
     });
 
     client.addEventListener('formSubmission', async evt => {
-        if (quizForm.itemId === evt.itemId && evt.submitterId !== bot.userId) {
+        if (quizForm && quizForm.itemId === evt.itemId && evt.submitterId !== bot.userId) {
            if (evt.form.id !== formId) {
                 return;
            }
@@ -286,8 +315,8 @@ const addEventListeners = () => {
                     try {
                         createNewSession(evt);
                     } catch (err) {
-                        console.error(err);
                         clearData();
+                        console.error(err);
                     }
                }
            } else {

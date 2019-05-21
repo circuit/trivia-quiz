@@ -9,6 +9,7 @@
   "author": " Richard Fazzio <richard.fazzio@atos.net>",
   "license": "ISC",
   "dependencies": {
-    "circuit-sdk": "^1.2.5603"
+    "circuit-sdk": "^1.2.5603",
+    "file-api": "^0.10.4"
   }
 }
