@@ -14,6 +14,6 @@ If you do not have one yet, [request your sandbox](https://yourcircuit.typeform.
 ## Usage
 1. Clone the respository.
 2. Run : `$ npm install`.
-3. Add `CLIENT_ID`, `CLIENT_SECRET`, `DOMAIN`, `SCOPES`, `MODERATOR_CONVERSATION_ID`, and the `QUIZ_CONVERSATION_ID` to the processes environment variables for the trivia session. The `MODERATOR_CONVERSATION_ID` field should refer to the conversation Id the host will have with the bot to create the trivia session. The `QUIZ_CONVERSATION_ID` should refer to the conversation Id the trivia session will take place in.
+3. Add `CLIENT_ID`, `CLIENT_SECRET`, `DOMAIN`, `SCOPES`, `MODERATOR_CONVERSATION_ID`, and `QUIZ_CONVERSATION_ID` to the process environment variables for the trivia session. The `MODERATOR_CONVERSATION_ID` field should refer to the conversation Id the host will have with the bot to create the trivia session. The `QUIZ_CONVERSATION_ID` should refer to the conversation Id the trivia session will take place in.
 * Note: The bot must be a part of the conversations it is listening to.
 4. To begin creating the trivia game mention the bot by typing `@triviaBotName new session` in the conversation referred to be the `MODERATOR_CONVERSATION_ID` and the bot will post a form for you to fill out. There is an optional field for the title of the quiz, default will be the date. After you fill out the form you can click "Start session now" to begin.
