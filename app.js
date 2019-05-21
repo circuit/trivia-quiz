@@ -146,13 +146,13 @@ const chooseWinners = async (itemId) => {
     users.sort((a, b) => a.displayName > b.displayName ? 1 : -1);
     let userListDataText = '';
     users.forEach((user, index) => {
-        userListDataText += `${index + 1}. ${user.displayName} - ${participantScoresHashMap[user.userId] && participantScoresHashMap[user.userId].score} points.\n`;
+        userListDataText += `${user.displayName} - ${participantScoresHashMap[user.userId] && participantScoresHashMap[user.userId].score} points.\n`;
     });
     if (!userListDataText.length) {
         return;
     }
     await client.addTextItem(QUIZ_CONVERSATION_ID , {
-        subject: 'Trivia Full Results',
+        subject: `Trivia Full Results - Total participants: ${users.length}`,
         content: userListDataText
     });
     const jsonFileAnswers = [];
@@ -177,7 +177,7 @@ const chooseWinners = async (itemId) => {
         buffer: Buffer.from(JSON.stringify(jsonFileAnswers, null, 4))
     });
     const results = {
-        subject: parentItem.text.subject,
+        subject: `${parentItem.text.subject} - Total participants: ${users.length}`,
         content: `Attatched are the results of the trivia quit.`,
         attachments: [fileBuffer]
     };
