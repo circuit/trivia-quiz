@@ -124,7 +124,7 @@ const chooseWinners = async (itemId) => {
     winnersScores = winnersScores.filter(s => s.score > 0);
     const winnerUserIds = winnersScores.map(w => w.userId);
     const winners = !!winnerUserIds.length && await client.getUsersById(winnerUserIds);
-    let content = !winners ? 'Sorry there were no winners.' : 'Winners:\n\n';
+    let content = !winners ? 'Sorry there were no winners.' : '<b>Winners:</b>\n';
     let place = 1;
     for (let i = 0 ; i < winnersScores.length; i++) {
         currScore = winnersScores[i].score;
@@ -135,26 +135,22 @@ const chooseWinners = async (itemId) => {
             winnerText += `, ${win.displayName}`;
             i++;
         }
-        winnerText += ` - ${currScore} points.\n`
+        winnerText += ` - ${currScore} points\n`
         content += winnerText;
         place++;
+    }
+    const users = await client.getUsersById(Object.keys(participantScoresHashMap));
+    users.sort((a, b) => a.displayName > b.displayName ? 1 : -1);
+    content += `\n<b>Trivia Full Results (in alphabetical order) - Total participants: ${users.length}</b>\n`;
+    users.forEach(user => {
+        content += `${user.displayName} - ${participantScoresHashMap[user.userId] && participantScoresHashMap[user.userId].score} points\n`;
+    });
+    if (!content.length) {
+        return;
     }
     await client.addTextItem(QUIZ_CONVERSATION_ID , {
         parentId: itemId,
         content: content
-    });
-    const users = await client.getUsersById(Object.keys(participantScoresHashMap));
-    users.sort((a, b) => a.displayName > b.displayName ? 1 : -1);
-    let userListDataText = '';
-    users.forEach((user, index) => {
-        userListDataText += `${user.displayName} - ${participantScoresHashMap[user.userId] && participantScoresHashMap[user.userId].score} points.\n`;
-    });
-    if (!userListDataText.length) {
-        return;
-    }
-    await client.addTextItem(QUIZ_CONVERSATION_ID , {
-        subject: `Trivia Full Results - Total participants: ${users.length}`,
-        content: userListDataText
     });
     const jsonFileAnswers = [];
     users.forEach(user => {
