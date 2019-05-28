@@ -1,4 +1,5 @@
 const Circuit = require('circuit-sdk');
+const fetch = require('node-fetch');
 const FileAPI = require('file-api');
 const File = FileAPI.File;
 const client = new Circuit.Client({
@@ -8,28 +9,69 @@ const client = new Circuit.Client({
     scope: process.env.SCOPES
 });
 
-const MODERATOR_CONVERSATION_ID = process.env.MODERATOR_CONVERSATION_ID; // conversation Id of the covnersation with moderator
-const QUIZ_CONVERSATION_ID = process.env.QUIZ_CONVERSATION_ID; // conversation Id of the trivia quiz
 const TIME_DELAY = 20; // Delay to wait between questions
-let formId; // Id of the current form (Creation Form or Questions for Trivia)
-let creatorId; // User Id of the moderator
-let quizForm; // Item Object of the current form
-let sessionOnGoing = false; // to determine if a session is going on
-let participantScoresHashMap = {}; // Hash map for participant scores, indexed by userId
-let quizAnswers = {}; // Hash map of quiz answers, indexed by their form id
+const DEFAULT_NUMBER_OF_QUESTIONS = 10; // Default number of questions for the quiz
+const CHARACTER_LIMIT = 400; // Character limit per question or answer
 let bot; // Bot to manage the trivia session
-let questions = []; // An array for form questions
+const quizSessions = {}; // Hash map of quiz sessions 
+const conversationsPromptHashMap = {}; // Hash map of conversation prompts 
 
+// Promt user for the conversation Id corresponding where the trivia quiz should be hosted
+const promptForConversation = async (item) => {
+    const sessionId = `${Date.now()}_${Math.random()}`;
+    conversationsPromptHashMap[sessionId] = {
+        creatorId: item.creatorId,
+        sessionId: sessionId,
+        convId: item.convId,
+        itemId: item.itemId
+    };
+    const form = {
+        title: 'Trivia Quiz',
+        id: sessionId,
+        controls: [{
+            type: 'LABEL',
+            text: 'Enter the conversation Id of which you want to host the trivia quiz.'
+        }, {
+            type: 'INPUT',
+            name: `convId`,
+            text: 'Conversation Id',
+        }, {
+            type: 'LABEL',
+            text: 'Enter the number of questions for the quiz (defaults to 10 questions)'
+        }, {
+            type: 'INPUT',
+            name: `questions`,
+            text: 'Number of questions',
+        }, {
+            type: 'BUTTON', // submit the form
+            options: [{
+                text: 'Submit',
+                action: 'submit',
+                notification: 'Form submitted successfully'
+            }]
+        }]
+    };
+    // if (item.attachments && item.attachments.length) {
+    //     const url = item.attachments[0].url;
+    //     const res = await fetch(url, {
+    //         headers: { 'Authorization': 'Bearer ' + client.accessToken }
+    //       });
+    //       conversationsPromptHashMap[sessionId].file = await res.json();
+    // } 
+    await client.addTextItem(item.convId, {
+        parentId: item.parentItemId || item.itemId,
+        form: form
+    });
+    console.log('Prompt user for conversation Id');
+}
 // Create the blank form for the moderator to fill out
-const createBlankForm = async (item) => {
-    creatorId = item.creatorId;
-    formId = `${Date.now()}_${Math.random()}`;
+const createBlankForm = async (session, convId, numberOfQuestions) => {
     let controls = [{
         type: 'INPUT',
         name: `title`, // optional
         text: 'Enter an optional title',
     }];
-    for (let i = 1; i <= 10; i++) {
+    for (let i = 1; i <= numberOfQuestions; i++) {
         const question = [{
             type: 'LABEL',
             text: `Question ${i}`
@@ -39,9 +81,61 @@ const createBlankForm = async (item) => {
             text: 'Enter the question here...',
             rows: 4
         }, {
+            type: 'LABEL',
+            text: `Answer A:`
+        }, {
             type: 'INPUT',
-            name: `answer${i}`,
-            text: 'Enter the answer here...',
+            name: `answerA${Date.now()}_${Math.random()}`,
+            text: 'Enter the answer for A here...',
+            rows: 2
+        }, {
+            type: 'LABEL',
+            text: `Answer B:`
+        }, {
+            type: 'INPUT',
+            name: `answerB${Date.now()}_${Math.random()}`,
+            text: 'Enter the answer for B here...',
+            rows: 2
+        }, {
+            type: 'LABEL',
+            text: `Answer C:`
+        }, {
+            type: 'INPUT',
+            name: `answerC${Date.now()}_${Math.random()}`,
+            text: 'Enter the answer for C here...',
+            rows: 2
+        }, {
+            type: 'LABEL',
+            text: `Answer D:`
+        }, {
+            type: 'INPUT',
+            name: `answerD${Date.now()}_${Math.random()}`,
+            text: 'Enter the answer for D here...',
+            rows: 2
+        }, {
+            type: 'LABEL',
+            text: `Select which answer is correct below...`
+        }, {
+            name: `${Date.now()}${i}`,
+            type: 'RADIO',
+            text: 'Select an answer to the question',
+            options: [{
+                text: 'A',
+                value: '0', // Each value will correspond to the array index
+                defaultValue: 'false'
+              }, {
+                text: 'B',
+                value: '1',
+                defaultValue: 'false'
+              }, {
+                text: 'C',
+                value: '2',
+                defaultValue: 'false'
+              }, {
+                text: 'D',
+                value: '3',
+                defaultValue: 'false'
+              }]
         }];
         controls = [...controls, ...question];
     }
@@ -60,21 +154,36 @@ const createBlankForm = async (item) => {
     controls = [...controls, ...actionButtons];
     const form = {
         title: 'Trivia Quiz',
-        id: formId,
+        id: convId,
         controls: controls
     };
     const content = {
+        content: '**Note forms will be lost if you navigate away from this conversation**',
         form: form
     };
-    quizForm = await client.addTextItem(MODERATOR_CONVERSATION_ID, content);
+    const quizForm = await client.addTextItem(session.convId, content);
+    delete conversationsPromptHashMap[session.sessionId]; // No longer need the session to cache form asking for the conversation Id
+    quizSessions[convId] = {
+        sessionId: convId,
+        quizConvId: convId,
+        creatorId: session.creatorId,
+        form: quizForm,
+        moderatorConvId: session.convId,
+        quizAnswers: {},
+        participantScoresHashMap: {}
+    }
 }
 
 // Creates a form for each question
-const createForm = (question, answer, total) => {
+const createForm = (session, question, answers, total) => {
     const formId = `${total}_${Date.now()}`;
+    const answerIndex = Number(answers[4].value) // Index of the answer
     // Save questions an answers in a hash map for later
-    quizAnswers[formId] = {
-        answer: answer.value,
+    session.quizAnswers[formId] = {
+        answer: {
+            value: answers[answerIndex].value,
+            index: answerIndex
+        },
         question: question.value
     };
     const form = {
@@ -84,10 +193,22 @@ const createForm = (question, answer, total) => {
             type: 'LABEL',
             text: question.value
         }, {
-            type: 'INPUT',
-            name: `answer`,
-            text: 'Enter your answer here',
-        }, {
+            name: 'choices',
+            type: 'RADIO',
+            options: [{
+                text: `A. ${answers[0].value}`,
+                value: '0'
+              }, {
+                text: `B. ${answers[1].value}`,
+                value: '1'
+              }, {
+                text: `C. ${answers[2].value}`,
+                value: '2'
+              }, {
+                text: `D. ${answers[3].value}`,
+                value: '3'
+              }]
+          }, {
             type: 'BUTTON', // submit the form
             options: [{
                 text: 'Submit',
@@ -100,9 +221,10 @@ const createForm = (question, answer, total) => {
 }
 
 // Chooses the winners and posts results to the conversation
-const chooseWinners = async (itemId) => {
+const chooseWinners = async (session, itemId) => {
+    const participantScoresHashMap = session.participantScoresHashMap;
     await sleep(TIME_DELAY / 2);
-    await client.addTextItem(QUIZ_CONVERSATION_ID , {
+    await client.addTextItem(session.quizConvId , {
         parentId: itemId,
         content: 'And the winners are...'
     });
@@ -141,14 +263,14 @@ const chooseWinners = async (itemId) => {
     }
     const users = await client.getUsersById(Object.keys(participantScoresHashMap));
     users.sort((a, b) => a.displayName > b.displayName ? 1 : -1);
-    content += `\n<b>Trivia Full Results (in alphabetical order) - Total participants: ${users.length}</b>\n`;
+    content += `\n\n<b>Trivia Full Results (in alphabetical order) - Total participants: ${users.length}</b>\n`;
     users.forEach(user => {
         content += `${user.displayName} - ${participantScoresHashMap[user.userId] && participantScoresHashMap[user.userId].score} points\n`;
     });
     if (!content.length) {
         return;
     }
-    await client.addTextItem(QUIZ_CONVERSATION_ID , {
+    await client.addTextItem(session.quizConvId , {
         parentId: itemId,
         content: content
     });
@@ -179,58 +301,92 @@ const chooseWinners = async (itemId) => {
         attachments: [fileBuffer]
     };
     // Upload the results of the trivia to the moderated conversation in JSON format
-    await client.addTextItem(MODERATOR_CONVERSATION_ID, results);
+    // If moderated conversation and quiz conversation are the same, post results ina  direct conversation between the bot and creator
+    if (session.quizConvId === session.moderatorConvId) {
+        const conversation = await client.getDirectConversationWithUser(session.creatorId, true);
+        await client.addTextItem(conversation.convId, results);
+    } else {
+        await client.addTextItem(session.moderatorConvId, results);
+    }
 }
 
 // Created a new session from the form and runs the quiz
 const createNewSession = async (formEvt) => {
     const form = formEvt.form;
-    questions = [];
+    const session = quizSessions[form.id];
+    session.questions = [];
     const title = form.data[0];
     let total = 0;
-    for (let i = 1; i < form.data.length; i += 2) {
+    for (let i = 1; i < form.data.length; i += 6) {
         const question = form.data[i];
-        const answer = form.data[i + 1];
-        if (question.value.length && answer.value.length) {
-            questions.push(createForm(question, answer, ++total));
+        const answers = form.data.slice(i + 1, i + 6);
+        if (isValidQuestion(question, answers)) {
+            session.questions.push(createForm(session, question, answers, ++total));
+        } else if (incorrectQuestionOrAnswer(question, answers)) {
+            await warnUser(session);
+            return;
         }
     }
-    if (!questions.length) {
-        clearData();
-        await client.addTextItem(MODERATOR_CONVERSATION_ID , {
+    await client.updateTextItem({
+        itemId: formEvt.itemId,
+        form: {
+            id: formEvt.form.id,
+            controls: {
+                type: 'LABEL',
+                text: 'Quiz submitted.'
+            }
+        }
+    });
+    if (!session.questions.length) {
+        deleteSession(session.sessionId);
+        await client.addTextItem(session.moderatorConvId , {
             parentId: formEvt.itemId,
-            content: `There aren't enough questions to make a quiz`
+            content: `There aren't enough questions to make a quiz.`
         });
         return;
     }
-    sessionOnGoing = true;
-    await client.addTextItem(MODERATOR_CONVERSATION_ID , {
+    session.sessionOnGoing = true;
+    await client.addTextItem(session.moderatorConvId , {
         parentId: formEvt.itemId,
         content: 'Form submitted, will start session.'
     });
-    const initialPost = await client.addTextItem(QUIZ_CONVERSATION_ID , {
+    const initialPost = await client.addTextItem(session.quizConvId , {
         subject: title.value ? title.value : `Trivia session ${new Date().toLocaleDateString()}`,
-        content: `I will post ${questions.length} question${questions.length > 1 ? 's' : ''}. You have ${TIME_DELAY} seconds to answer each question. First person to answer correctly gets extra points. Get ready, first question is coming up now...`
+        content: `I will post ${session.questions.length} question${session.questions.length > 1 ? 's' : ''}. You have ${TIME_DELAY} seconds to answer each question. First person to answer correctly gets extra points. Get ready, first question is coming up now...`
     });
     await sleep(TIME_DELAY / 2);
-    for (const question of questions) {
+    for (const question of session.questions) {
         formId = question.id;
-        quizForm = await client.addTextItem(QUIZ_CONVERSATION_ID, {
+        session.quizForm = await client.addTextItem(session.quizConvId, {
             parentId: initialPost.itemId,
             form: question
         });
         await sleep(TIME_DELAY);
-        await updateForm(quizForm);
+        await updateForm(session);
     }
-    await chooseWinners(initialPost.itemId);
-    clearData(); // Resets local variables for a new session
+    await chooseWinners(session, initialPost.itemId);
+    deleteSession(session.sessionId); // Resets local variables for a new session
+}
+
+// Find the quiz session for when users submit an answer, returns undefined if not found
+const findQuizSession = (evt) => {
+    if (quizSessions[evt.form.id]) {
+        return quizSessions[evt.form.id];
+    }
+    if (quizSessions[evt.form.data[0].value] && !quizSessions[evt.form.data[0].value].sessionOnGoing) {
+        return quizSessions[evt.form.data[0].value];
+    }
+    const id = Object.keys(quizSessions).find(id => quizSessions[id].quizForm && quizSessions[id].quizForm.itemId === evt.itemId);
+    return quizSessions[id];
 }
 
 // Updated the form after the time is finished
-const updateForm = async (item) => {
+const updateForm = async (session) => {
+    const quizAnswers = session.quizAnswers;
+    const item = session.quizForm;
     const text = {
         type: 'LABEL',
-        text: `The correct answer was: ${quizAnswers[item.text.formMetaData.id].answer}`
+        text: `The correct answer was: \n${mapAnswerGiven(quizAnswers[item.text.formMetaData.id].answer.index)}. ${quizAnswers[item.text.formMetaData.id].answer.value}`
     };
     item.text.formMetaData.controls = [item.text.formMetaData.controls[0], text];
     await client.updateTextItem({
@@ -240,11 +396,14 @@ const updateForm = async (item) => {
 }
 
 // Submits the answer, awards points if correct (2 if first)
-const submitAnswer = (evt) => {
+const submitAnswer = (session, evt) => {
+    const participantScoresHashMap = session.participantScoresHashMap;
+    const quizAnswers = session.quizAnswers;
     const userId = evt.submitterId;
     const userForm = evt.form;
+    const answerGiven = Number(userForm.data[0].value);
     const answerData = {
-        answerGiven: userForm.data[0].value,
+        answerGiven: mapAnswerGiven(answerGiven),
         pointsGiven: 0,
         question: userForm.id.substring(0, 1)
     };
@@ -256,7 +415,7 @@ const submitAnswer = (evt) => {
         };
     }
     // User submitted the correct answer
-    if (userForm.data[0].value.toUpperCase() === quizAnswers[userForm.id].answer.toUpperCase()) {
+    if (answerGiven === quizAnswers[userForm.id].answer.index) {
         if (!quizAnswers[userForm.id].answered) {
             quizAnswers[userForm.id].answered = true;
             participantScoresHashMap[userId].score += 2;
@@ -269,59 +428,140 @@ const submitAnswer = (evt) => {
     participantScoresHashMap[userId].answers[userForm.id.substring(0, 1)] = answerData;
 }
 
-// Reset variables for the session
-const clearData = () => {
-    formId = null;
-    creatorId = null;
-    quizForm = null;
-    sessionOnGoing = false;
-    participantScoresHashMap = {};
-    quizAnswers = {};
-    questions = [];
-}
-
 const addEventListeners = () => {
     client.addEventListener('mention', async evt => {
         const itemReference = evt.mention && evt.mention.itemReference;
-        // The item was posted in the moderator conversation
-        if (itemReference.convId !== MODERATOR_CONVERSATION_ID) {
-            return;
-        }
         const item = await client.getItemById(itemReference.itemId);
         if (item.text.content.includes('new session')) {
-            if (!!formId) {
-                await client.addTextItem(MODERATOR_CONVERSATION_ID, {
-                    parentId: item.parentItemId || item.itemId,
-                    content: 'I am sorry but there is already a session in progress.'
-                });
-                return;
-            }
-            createBlankForm(item);
+            promptForConversation(item);
         }
     });
 
     client.addEventListener('formSubmission', async evt => {
-        if (quizForm && quizForm.itemId === evt.itemId && evt.submitterId !== bot.userId) {
-           if (evt.form.id !== formId) {
-                return;
-           }
-           // Return so the creator cannot take part in the quiz 
-           if (evt.submitterId === creatorId) {
-               // If the moderator submits the form from the moderator conversation, create a new session
-               if (!sessionOnGoing && evt.itemId === quizForm.itemId && quizForm.convId === MODERATOR_CONVERSATION_ID) {
-                    try {
-                        createNewSession(evt);
-                    } catch (err) {
-                        clearData();
-                        console.error(err);
-                    }
-               }
-           } else {
-                submitAnswer(evt);
-           }
+        const form = evt.form;
+        const quizSession = findQuizSession(evt);
+        const conversationsPrompt = conversationsPromptHashMap[form.id];
 
+        // Handle the form submissions for prompting user for conversation to perform quiz in
+        if (conversationsPrompt && evt.submitterId !== bot.userId) {
+            const convId = form.data[0].value;
+            const numberOfQuestions = Number(form.data[1].value) || DEFAULT_NUMBER_OF_QUESTIONS;
+            if (!!quizSession) {
+                await client.updateTextItem({
+                    itemId: evt.itemId,
+                    form: {
+                        id: form.id,
+                        controls: {
+                            type: 'LABEL',
+                            text: `There appears to be a session underway for ${convId}. Please wait until that session is over before starting another one.`
+                        }
+                    }
+                });
+                return;
+            }
+            try {
+                // If someone else tries to use the form to create a conversation return
+                if (evt.submitterId !== conversationsPrompt.creatorId) {
+                    return;
+                }
+                // Get conversation by its Id to check if the bot is a part of the conversation, will fail if bot is not included.
+                await client.getConversationById(convId);
+                console.log(`Sending user ${conversationsPrompt.creatorId} blank form for conversation: ${convId}...`);
+                await client.updateTextItem({
+                    itemId: evt.itemId,
+                    form: {
+                        id: form.id,
+                        controls: {
+                            type: 'LABEL',
+                            text: `Creating session for conversation with conversation Id: ${convId}.`
+                        }
+                    }
+                });
+                await createBlankForm(conversationsPrompt, convId, numberOfQuestions);
+            } catch (err) {
+                console.error(err);
+                delete conversationsPrompt[form.id];
+                let text;
+                if (err.code === Circuit.Constants.ErrorCode.PERMISSION_DENIED) {
+                    text = `There was an error, please make sure the bot is added to the conversation with conversation Id: ${convId} first. Please add ${bot.emailAddress} to the conversation and try again.`;
+                } else {
+                    text = `There was an error starting a session for conversation with conversation Id: ${convId}. Please try again later.`
+                }
+                const content = {
+                    itemId: evt.itemId,
+                    form: {
+                        id: form.id,
+                        controls: {
+                            type: 'LABEL',
+                            text: text
+                        }
+                    }
+                };
+                await client.updateTextItem(content);
+            }
+        }
+
+        // Handle form submissions for the quiz
+        if (quizSession) {
+            // If the quiz hasn't started and the creator is posting the form, start the new session
+            if (!quizSession.sessionOnGoing && quizSession.creatorId === evt.submitterId) {
+                createNewSession(evt);
+                return;
+            } 
+            // Only submit answers if the session is ongoing
+            if (quizSession.sessionOnGoing) {
+                submitAnswer(quizSession, evt);
+            }
         }
     });
+}
+
+
+// Return true if the uqestion is filled out correctly
+const isValidQuestion = (question, answers) => {
+    return !!question.value.length && answers.every(answer => !!answer.value.length);
+}
+
+// Return true if the uqestion is filled out correctly
+const incorrectQuestionOrAnswer = (question, answers) => {
+    return (!!question.value.length && answers.some(answer => !answer.value.length)
+        || (!question.value.length && answers.some(answer => !!answer.value.length)))
+        || question.value.length > CHARACTER_LIMIT
+        || answers.some(answer => answer.value.length > CHARACTER_LIMIT);
+}
+
+const warnUser = async (session) => {
+    try {
+        await client.addTextItem(session.form.convId, {
+            parentId: session.form.parentItemId || session.form.itemId,
+            content: 'One of the questions seem to be filled out improperly. Please create a new session and fix the issue.'
+        });
+        deleteSession(session.sessionId);
+    } catch (err) {
+        deleteSession(session.sessionId);
+        console.error(err);
+    }
+}
+
+// Map the index of answer given to the corresponding letter value for results
+const mapAnswerGiven = (index) => {
+    switch (index) {
+        case 0 : 
+            return 'A';
+        case 1: 
+            return 'B';
+        case 2: 
+            return 'C';
+        case 3: 
+            return 'D';
+    }
+}
+
+// Delete the session from the Cache / Hash Map
+const deleteSession = (id) => {
+    if (quizSessions[id]) {
+        delete quizSessions[id];
+    }
 }
 
 // Delay process in seconds
