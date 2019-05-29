@@ -1,0 +1,30 @@
+{
+    "quiz": [{
+        "question": "How old is the earth?",
+        "answers": [
+            "4.5 Billion years",
+            "9000 Years",
+            "1 Week",
+            "13.7 Billion years"
+        ],
+        "answer": 0
+    }, {
+        "question": "What is the solution to 5 = 2x - 1?",
+        "answers": [
+            "2",
+            "3",
+            "4",
+            "5"
+        ],
+        "answer": 1
+    }, {
+        "question": "How many stars are on the US flag?",
+        "answers": [
+            "51",
+            "52",
+            "50",
+            "42"
+        ],
+        "answer": 2
+    }]
+}
