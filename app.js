@@ -46,9 +46,25 @@ const promptForConversation = async (item) => {
         const url = item.attachments[0].url;
         const res = await fetch(url, {
             headers: { 'Authorization': 'Bearer ' + client.accessToken }
-          });
-          const file = await res.json();
-          conversationsPromptHashMap[sessionId].quiz = file.quiz;
+        });
+        let quiz;
+        try {
+            const file = await res.json();
+            quiz = file.quiz;
+        } catch (err) {
+            // Handle if they upload a file that is not a .json file
+            console.error(err);
+        }
+        // If the file format or quiz is not filled out correctly reject the session
+        if (isInvalidQuiz(quiz)) {
+            await client.addTextItem(item.convId, {
+                parentId: item.parentItemId || item.itemId,
+                content: 'There was an error with the quiz.json file you submitted, please fix it then try again.'
+            });
+            delete conversationsPromptHashMap[sessionId];
+            return;
+        }
+        conversationsPromptHashMap[sessionId].quiz = quiz;
     } 
     if (conversationsPromptHashMap[sessionId].quiz) {
         form.controls.push({
@@ -140,92 +156,7 @@ const createFromPremadeQuiz = async (session, convId, threadId, awardPoints) => 
 
 // Create the blank form for the moderator to fill out
 const createBlankForm = async (session, convId, numberOfQuestions, threadId, awardPoints) => {
-    let controls = [{
-        type: 'INPUT',
-        name: `title`, // optional
-        text: 'Enter an optional title',
-    }];
-    for (let i = 1; i <= numberOfQuestions; i++) {
-        const question = [{
-            type: 'LABEL',
-            text: `Question ${i}`
-        }, {
-            type: 'INPUT',
-            name: `question${i}`,
-            text: 'Enter the question here...',
-            rows: 4
-        }, {
-            type: 'LABEL',
-            text: `Answer A:`
-        }, {
-            type: 'INPUT',
-            name: `answerA${Date.now()}_${Math.random()}`,
-            text: 'Enter the answer for A here...',
-            rows: 2
-        }, {
-            type: 'LABEL',
-            text: `Answer B:`
-        }, {
-            type: 'INPUT',
-            name: `answerB${Date.now()}_${Math.random()}`,
-            text: 'Enter the answer for B here...',
-            rows: 2
-        }, {
-            type: 'LABEL',
-            text: `Answer C:`
-        }, {
-            type: 'INPUT',
-            name: `answerC${Date.now()}_${Math.random()}`,
-            text: 'Enter the answer for C here...',
-            rows: 2
-        }, {
-            type: 'LABEL',
-            text: `Answer D:`
-        }, {
-            type: 'INPUT',
-            name: `answerD${Date.now()}_${Math.random()}`,
-            text: 'Enter the answer for D here...',
-            rows: 2
-        }, {
-            type: 'LABEL',
-            text: `Select which answer is correct below...`
-        }, {
-            name: `${Date.now()}${i}`,
-            type: 'RADIO',
-            text: 'Select an answer to the question',
-            options: [{
-                text: 'A',
-                value: '0', // Each value will correspond to the array index
-                defaultValue: 'false'
-              }, {
-                text: 'B',
-                value: '1',
-                defaultValue: 'false'
-              }, {
-                text: 'C',
-                value: '2',
-                defaultValue: 'false'
-              }, {
-                text: 'D',
-                value: '3',
-                defaultValue: 'false'
-              }]
-        }];
-        controls = [...controls, ...question];
-    }
-    const actionButtons = [{
-        type: 'BUTTON', // submit the form
-        options: [{
-            text: 'Start session now',
-            action: 'submit',
-            notification: 'Form submitted successfully'
-        }, {
-            text: 'Cancel',
-            action: 'reset',
-            notification: 'Form cancelled successfully'
-        }]
-    }];
-    controls = [...controls, ...actionButtons];
+    const controls = createControls(numberOfQuestions);
     const form = {
         title: 'Trivia Quiz',
         id: convId,
@@ -390,6 +321,100 @@ const endSession = async (session, itemId) => {
     deleteSession(session); // Resets local variables for a new session
 }
 
+const createControls = (numberOfQuestions, data) => {
+    let controls = [{
+        type: 'INPUT',
+        name: `title`, // optional
+        text: 'Enter an optional title',
+        value: !!data ? data[0].value : ''
+    }];
+    // i and j start from 1 because first element is always the title
+    for (let i = 1, j = 1; i <= numberOfQuestions; i++) {
+        const question = [{
+            type: 'LABEL',
+            text: `Question ${i}`
+        }, {
+            type: 'INPUT',
+            name: `question${i}`,
+            value: !!data && data[j] ? data[j++].value : '',
+            text: 'Enter the question here...',
+            rows: 4
+        }, {
+            type: 'LABEL',
+            text: `Answer A:`
+        }, {
+            type: 'INPUT',
+            name: !!data && data[j] ? data[j].name : `answerA${Date.now()}_${Math.random()}`,
+            value: !!data && data[j] ? data[j++].value : '',
+            text: 'Enter the answer for A here...',
+            rows: 2
+        }, {
+            type: 'LABEL',
+            text: `Answer B:`
+        }, {
+            type: 'INPUT',
+            name: !!data && data[j] ? data[j].name : `answerB${Date.now()}_${Math.random()}`,
+            value: !!data && data[j] ? data[j++].value : '',
+            text: 'Enter the answer for B here...',
+            rows: 2
+        }, {
+            type: 'LABEL',
+            text: `Answer C:`
+        }, {
+            type: 'INPUT',
+            name: !!data && data[j] ? data[j].name : `answerC${Date.now()}_${Math.random()}`,
+            value: !!data && data[j] ? data[j++].value : '',
+            text: 'Enter the answer for C here...',
+            rows: 2
+        }, {
+            type: 'LABEL',
+            text: `Answer D:`
+        }, {
+            type: 'INPUT',
+            name: !!data && data[j] ? data[j].name : `answerD${Date.now()}_${Math.random()}`,
+            value: !!data && data[j] ? data[j++].value : '',
+            text: 'Enter the answer for D here...',
+            rows: 2
+        }, {
+            type: 'LABEL',
+            text: `Select which answer is correct below...`
+        }, {
+            name: !!data && data[j] ? data[j].name :  `${Date.now()}${i}`,
+            type: 'RADIO',
+            text: 'Select an answer to the question',
+            defaultValue: !!data && !!data[j] ? data[j++].value : undefined,
+            options: [{
+                text: 'A',
+                value: '0', // Each value will correspond to the array index
+              }, {
+                text: 'B',
+                value: '1',
+              }, {
+                text: 'C',
+                value: '2',
+              }, {
+                text: 'D',
+                value: '3',
+              }]
+        }];
+        controls = [...controls, ...question];
+    }
+    const actionButtons = [{
+        type: 'BUTTON', // submit the form
+        options: [{
+            text: 'Start session now',
+            action: 'submit',
+            notification: 'Form submitted successfully'
+        }, {
+            text: 'Cancel',
+            action: 'reset',
+            notification: 'Form cancelled successfully'
+        }]
+    }];
+    controls = [...controls, ...actionButtons];
+    return controls;
+}
+
 // Created a new session from the form and runs the quiz
 const startNewSession = async (formEvt) => {
     const form = formEvt.form;
@@ -409,12 +434,11 @@ const startNewSession = async (formEvt) => {
             if (isValidQuestion(question, answers)) {
                 session.questions.push(createForm(session, question, answers, ++total));
             } else if (incorrectQuestionOrAnswer(question, answers)) {
-                await warnUser(session);
+                await warnUser(session, form, question);
                 return;
             }
         }
     }
-
     await client.updateTextItem({
         itemId: formEvt.itemId,
         form: {
@@ -434,8 +458,9 @@ const startNewSession = async (formEvt) => {
         return;
     }
     session.sessionOnGoing = true;
+    const item = await client.getItemById(formEvt.itemId);
     await client.addTextItem(session.moderatorConvId , {
-        parentId: formEvt.itemId,
+        parentId: item.parentItemId || item.itemId,
         content: 'Form submitted, will start session.'
     });
     const initialPost = await client.addTextItem(session.quizConvId , {
@@ -461,7 +486,8 @@ const findQuizSession = (evt) => {
     if (quizSessions[evt.form.id]) {
         return quizSessions[evt.form.id];
     }
-    if (quizSessions[evt.form.data[0].value] && !quizSessions[evt.form.data[0].value].sessionOnGoing) {
+    evt.form.data[0].value = evt.form.data[0].value.replace(`https://${process.env.DOMAIN}/#/conversation/`, '');
+    if (quizSessions[evt.form.data[0].value]) { // && !quizSessions[evt.form.data[0].value].sessionOnGoing) {
         return quizSessions[evt.form.data[0].value];
     }
     const id = Object.keys(quizSessions).find(id => quizSessions[id].quizForm && quizSessions[id].quizForm.itemId === evt.itemId);
@@ -630,11 +656,10 @@ const addEventListeners = () => {
             if (!quizSession.sessionOnGoing && quizSession.creatorId === evt.submitterId) {
                 try {
                     await startNewSession(evt);
-                    deleteSession(quizSession); // Resets local variables for a new session
                     return;
                 } catch (err) {
                     console.error(err);
-                    await client.addTextItem(quizSession.moderatorConvId, `There was an error with the quiz for conversation: ${quiz.quizConvId}`);
+                    await client.addTextItem(quizSession.moderatorConvId, 'There was an error with the quiz for conversation');
                     deleteSession(quizSession); // Resets local variables for a new session
                 }
             } 
@@ -646,6 +671,8 @@ const addEventListeners = () => {
     });
 }
 
+// Returns true if the premade quize is formatted improperly
+const isInvalidQuiz = quiz => !quiz || quiz.some(q => !mapAnswerGiven(q.answer) || !q.question || !q.question.length || !q.answers || q.answers.length !== 4 || !q.answers.every(a => !!a.length))
 
 // Return true if the question is filled out correctly
 const isValidQuestion = (question, answers) => {
@@ -660,14 +687,37 @@ const incorrectQuestionOrAnswer = (question, answers) => {
         || answers.some(answer => answer.value.length > CHARACTER_LIMIT);
 }
 
-const warnUser = async (session) => {
+const warnUser = async (session, form, question) => {
     try {
+        const numberOfQuestions = (form.data.length - 1) / 6; // Number of questions to recreate
+        const controls = createControls(numberOfQuestions, form.data);
+        const questionNumber = question.name.replace('question', ''); // Get the question number to give to the user
+        await client.updateTextItem({
+            itemId: session.form.itemId,
+            form: {
+                id: form.id,
+                controls: [{
+                    type: 'LABEL',
+                    text: `Quiz submitted.`
+                }]
+            }
+        });
+        const newForm = {
+            title: 'Trivia Quiz',
+            id: form.id,
+            controls: controls
+        }
+        const quizForm = await client.addTextItem(session.form.convId, {
+            parentId: session.form.parentItemId || session.form.itemId,
+            content: `One of the questions seem to be filled out improperly. Issue found with question ${questionNumber} Please fix the issue.`,
+            form: newForm
+        });
+        session.form = quizForm;
+    } catch (err) {
         await client.addTextItem(session.form.convId, {
             parentId: session.form.parentItemId || session.form.itemId,
-            content: 'One of the questions seem to be filled out improperly. Please create a new session and fix the issue.'
+            content: 'There was an error submitting your quiz, please try again.'
         });
-        deleteSession(session);
-    } catch (err) {
         deleteSession(session);
         console.error(err);
     }
@@ -676,13 +726,13 @@ const warnUser = async (session) => {
 // Map the index of answer given to the corresponding letter value for results
 const mapAnswerGiven = (index) => {
     switch (index) {
-        case 0 : 
+        case 0 :
             return 'A';
-        case 1: 
+        case 1:
             return 'B';
-        case 2: 
+        case 2:
             return 'C';
-        case 3: 
+        case 3:
             return 'D';
     }
 }
