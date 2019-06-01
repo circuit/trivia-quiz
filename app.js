@@ -801,6 +801,7 @@ const sleep = (seconds) => {
     try {
         bot = await client.logon();
         addEventListeners();
+        console.log('Bot listening...');
     } catch (err) {
         console.error(err);
     }

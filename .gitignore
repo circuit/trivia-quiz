@@ -3,6 +3,7 @@ node_modules
 npm-debug.log
 
 # Personal Configuration
+app.yaml
 config.json
 processenveu.json
 .vscode
