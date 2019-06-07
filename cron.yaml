@@ -1,0 +1,4 @@
+cron: 
+- description: "Ping server"
+  url: /
+  schedule: every 1 mins

@@ -1,4 +1,5 @@
 const Circuit = require('circuit-sdk');
+const express = require('express');
 const fetch = require('node-fetch');
 const FileAPI = require('file-api');
 const File = FileAPI.File;
@@ -15,6 +16,17 @@ const CHARACTER_LIMIT = 400; // Character limit per question or answer
 let bot; // Bot to manage the trivia session
 const quizSessions = {}; // Hash map of quiz sessions, indexed by {userId}_{convId}
 const conversationsPromptHashMap = {}; // Hash map of conversation prompts
+
+
+const app = express();
+
+app.get('/_ah/start', (req, res) => {
+  console.log('handle _ah/start');
+  res.sendStatus(200);
+});
+
+// Start server
+app.listen(process.env.PORT || 8080, () => console.log(`Server started`));
 
 // Promt user for the conversation Id corresponding where the trivia quiz should be hosted
 const promptForConversation = async (item) => {
