@@ -684,7 +684,7 @@ const addEventListeners = () => {
 }
 
 // Returns true if the premade quize is formatted improperly
-const isInvalidQuiz = quiz => !quiz || quiz.some(q => !mapAnswersToIndex(q.answer) || !q.question || !q.question.length || !q.answers || q.answers.length !== 4 || !q.answers.every(a => !!a.length))
+const isInvalidQuiz = quiz => !quiz || quiz.some(q => typeof mapAnswersToIndex(q.answer) !== 'number' || !q.question || !q.question.length || !q.answers || q.answers.length !== 4 || !q.answers.every(a => !!a.length))
 
 // Return true if the question is filled out correctly
 const isValidQuestion = (question, answers) => {
