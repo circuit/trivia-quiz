@@ -512,7 +512,7 @@ const updateForm = async (session) => {
     const item = session.quizForm;
     const text = {
         type: 'LABEL',
-        text: `The correct answer was: \n${mapAnswerGiven(quizAnswers[item.text.formMetaData.id].answer.index)}. ${quizAnswers[item.text.formMetaData.id].answer.value}`
+        text: `The correct answer was: \n${mapIndexToAnswers(quizAnswers[item.text.formMetaData.id].answer.index)}. ${quizAnswers[item.text.formMetaData.id].answer.value}`
     };
     item.text.formMetaData.controls = [item.text.formMetaData.controls[0], text];
     await client.updateTextItem({
@@ -529,7 +529,7 @@ const submitAnswer = (session, evt) => {
     const userForm = evt.form;
     const answerGiven = Number(userForm.data[0].value);
     const answerData = {
-        answerGiven: mapAnswerGiven(answerGiven),
+        answerGiven: mapIndexToAnswers(answerGiven),
         pointsGiven: 0,
         question: userForm.id.substring(0, 1)
     };
@@ -684,7 +684,7 @@ const addEventListeners = () => {
 }
 
 // Returns true if the premade quize is formatted improperly
-const isInvalidQuiz = quiz => !quiz || quiz.some(q => !mapAnswerGiven(q.answer) || !q.question || !q.question.length || !q.answers || q.answers.length !== 4 || !q.answers.every(a => !!a.length))
+const isInvalidQuiz = quiz => !quiz || quiz.some(q => !mapAnswersToIndex(q.answer) || !q.question || !q.question.length || !q.answers || q.answers.length !== 4 || !q.answers.every(a => !!a.length))
 
 // Return true if the question is filled out correctly
 const isValidQuestion = (question, answers) => {
@@ -736,7 +736,7 @@ const warnUser = async (session, form, question) => {
 }
 
 // Map the index of answer given to the corresponding letter value for results
-const mapAnswerGiven = (index) => {
+const mapIndexToAnswers = (index) => {
     switch (index) {
         case 0 :
             return 'A';
@@ -749,10 +749,24 @@ const mapAnswerGiven = (index) => {
     }
 }
 
+// Map the answer in letter value to its index
+const mapAnswersToIndex = (ans) => {
+    switch (ans) {
+        case 'A' :
+            return 0;
+        case 'B':
+            return 1;
+        case 'C':
+            return 2;
+        case 'D':
+            return 3;
+    }
+}
+
 const mapPremadeQuestions = (session, data, total) => {
     const question = data.question;
     const answers = data.answers;
-    const answerIndex = Number(data.answer); // Index of the answer
+    const answerIndex = mapAnswersToIndex(Number(data.answer)); // Index of the answer
     const formId = `${total}_${Date.now()}`;
     // Save questions an answers in a hash map for later
     session.quizAnswers[formId] = {
