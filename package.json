@@ -10,7 +10,7 @@
   "license": "ISC",
   "dependencies": {
     "circuit-sdk": "latest",
-    "express": "^4.17.1",
+    "express": "^4.17.3",
     "file-api": "^0.10.4",
     "node-fetch": "^2.6.0"
   }
